@@ -81,7 +81,7 @@ jobs:
         working-directory: upstream/codex-rs
         run: |
           set -euo pipefail
-          cargo build --locked --release --target "${{ matrix.target }}" --bin codex
+          cargo build --release --target "${{ matrix.target }}" --bin codex
 
       - name: Upload binary
         uses: actions/upload-artifact@v7
