@@ -1,0 +1,1 @@
+# codex-memory-scope-patch
