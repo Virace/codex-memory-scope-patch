@@ -1,0 +1,90 @@
+name: build-patched-codex
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream openai/codex ref to build"
+        required: true
+        default: "rust-v0.116.0"
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: codex
+            artifact_name: codex-linux-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: codex.exe
+            artifact_name: codex-windows-x64
+
+    steps:
+      - name: Checkout patch repo
+        uses: actions/checkout@v6
+
+      - name: Clone upstream repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/openai/codex.git upstream
+          git -C upstream checkout "${{ inputs.upstream_ref }}"
+
+      - name: Apply scope patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C upstream apply "${GITHUB_WORKSPACE}/patches/read_path_scope.patch"
+
+      - name: Verify only the intended file changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git -C upstream diff --name-only)
+          printf '%s\n' "${changed[@]}"
+          if [[ "${#changed[@]}" -ne 1 ]]; then
+            echo "Unexpected changed file count: ${#changed[@]}"
+            exit 1
+          fi
+          if [[ "${changed[0]}" != "codex-rs/core/templates/memories/read_path.md" ]]; then
+            echo "Unexpected changed file: ${changed[0]}"
+            exit 1
+          fi
+
+      - name: Show patched prompt snippet
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -n '1,20p' upstream/codex-rs/core/templates/memories/read_path.md
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+
+      - name: Build codex
+        shell: bash
+        working-directory: upstream/codex-rs
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --target "${{ matrix.target }}" --bin codex
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: upstream/codex-rs/target/${{ matrix.target }}/release/${{ matrix.binary_name }}

@@ -1,0 +1,14 @@
+diff --git a/codex-rs/core/templates/memories/read_path.md b/codex-rs/core/templates/memories/read_path.md
+--- a/codex-rs/core/templates/memories/read_path.md
++++ b/codex-rs/core/templates/memories/read_path.md
+@@ -3,7 +3,9 @@
+ You have access to a memory folder with guidance from prior runs. It can save
+ time and help you stay consistent. Use it whenever it is likely to help.
+ 
+-Never update memories. You can only read them.
++Do not directly modify Codex-managed memory artifacts under {{ base_path }} in this session.
++Treat only that Codex memory root as read-only.
++This restriction does not apply to unrelated project directories or other MCP-managed state unless separately instructed.
+ 
+ Decision boundary: should you use memory for a new user query?
+ 
