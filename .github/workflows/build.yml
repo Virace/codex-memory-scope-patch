@@ -36,11 +36,12 @@ jobs:
           git clone https://github.com/openai/codex.git upstream
           git -C upstream checkout "${{ inputs.upstream_ref }}"
 
-      - name: Apply scope patch
+      - name: Replace read_path scope sentence
         shell: bash
         run: |
           set -euo pipefail
-          git -C upstream apply "${GITHUB_WORKSPACE}/patches/read_path_scope.patch"
+          python "${GITHUB_WORKSPACE}/scripts/replace_read_path_scope.py" \
+            "upstream/codex-rs/core/templates/memories/read_path.md"
 
       - name: Verify only the intended file changed
         shell: bash
