@@ -1,0 +1,69 @@
+name: patch-release-binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "openai/codex release tag to patch"
+        required: true
+        default: "rust-v0.117.0"
+
+jobs:
+  patch-windows-x64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout patch repo
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Download Windows x64 release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .temp
+          curl -fL --retry 3 \
+            -o .temp/codex-x86_64-pc-windows-msvc.exe \
+            "https://github.com/openai/codex/releases/download/${{ inputs.release_tag }}/codex-x86_64-pc-windows-msvc.exe"
+
+      - name: Download matching read_path.md template
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 \
+            -o .temp/read_path.md \
+            "https://raw.githubusercontent.com/openai/codex/${{ inputs.release_tag }}/codex-rs/core/templates/memories/read_path.md"
+
+      - name: Patch read_path.md template
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/patch_read_path_template.py \
+            --template .temp/read_path.md \
+            --output .temp/read_path.patched.md
+
+      - name: Patch embedded read_path block in release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/patch_read_path_block.py \
+            --exe .temp/codex-x86_64-pc-windows-msvc.exe \
+            --template .temp/read_path.md \
+            --output-exe .temp/codex-x86_64-pc-windows-msvc.patched.exe \
+            --output-template .temp/read_path.block-patched.md
+
+      - name: Verify patched binary keeps original size
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c "from pathlib import Path; original = Path('.temp/codex-x86_64-pc-windows-msvc.exe').stat().st_size; patched = Path('.temp/codex-x86_64-pc-windows-msvc.patched.exe').stat().st_size; print(f'original_size={original}'); print(f'patched_size={patched}'); raise SystemExit(0 if original == patched else 1)"
+
+      - name: Upload patched Windows x64 binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-x86_64-pc-windows-msvc-patched
+          path: .temp/codex-x86_64-pc-windows-msvc.patched.exe

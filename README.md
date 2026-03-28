@@ -43,6 +43,20 @@ rust-v0.116.0
 
 也可以填写具体 commit SHA。
 
+## Release 成品 Patch
+
+如果不想 clone upstream 再重新编译，也可以直接运行 `patch-release-binary` workflow。
+
+这条 workflow 会：
+
+1. 下载指定 `release_tag` 对应的 `codex-x86_64-pc-windows-msvc.exe`
+2. 下载同 tag 的 `codex-rs/core/templates/memories/read_path.md`
+3. 先做一层提示词 patch：只改 4 处目标文本，并要求 patch 前后归一化后的模板字节长度完全一致
+4. 再做一层制成品 patch：用原始 `read_path.md` 定位 exe 内嵌 block，再用 patched 模板按原偏移覆盖
+5. 上传 patched Windows x64 可执行文件
+
+这条路径的重点不是“硬编码一整份完整提示词”，而是尽量用最小锚点做等长替换。这样 upstream 只要没有大改 `read_path.md`，即使有少量无关文本变化，我们仍然大概率可以继续 patch；一旦关键锚点缺失或等长条件失效，workflow 会直接失败，而不是猜测性地继续改。
+
 ## 产物说明
 
 当前 workflow 默认构建：
