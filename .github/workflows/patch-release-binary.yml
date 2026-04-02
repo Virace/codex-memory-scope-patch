@@ -4,13 +4,64 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "openai/codex release tag to patch"
+        description: "openai/codex release name or raw tag to patch"
         required: true
-        default: "rust-v0.117.0"
+        default: "0.119.0-alpha.3"
+
+permissions:
+  contents: write
 
 jobs:
-  patch-windows-x64:
+  prepare-release:
     runs-on: ubuntu-latest
+    outputs:
+      upstream_release_tag: ${{ steps.resolve.outputs.upstream_release_tag }}
+      upstream_release_name: ${{ steps.resolve.outputs.upstream_release_name }}
+      patched_release_tag: ${{ steps.resolve.outputs.patched_release_tag }}
+
+    steps:
+      - name: Resolve upstream and patched release tags
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          input_tag="${{ inputs.release_tag }}"
+          if [[ "$input_tag" == rust-v* ]]; then
+            upstream_release_tag="$input_tag"
+            upstream_release_name="${input_tag#rust-v}"
+          else
+            upstream_release_tag="rust-v${input_tag}"
+            upstream_release_name="$input_tag"
+          fi
+          patched_release_tag="patched-${upstream_release_name}"
+
+          printf 'upstream_release_tag=%s\n' "$upstream_release_tag" >> "$GITHUB_OUTPUT"
+          printf 'upstream_release_name=%s\n' "$upstream_release_name" >> "$GITHUB_OUTPUT"
+          printf 'patched_release_tag=%s\n' "$patched_release_tag" >> "$GITHUB_OUTPUT"
+
+  patch-release-binary:
+    name: Patch ${{ matrix.label }} release binary
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x64
+            download_name: codex-x86_64-unknown-linux-gnu.tar.gz
+            working_binary_name: codex-x86_64-unknown-linux-gnu
+            patched_binary_name: codex-x86_64-unknown-linux-gnu.patched
+            artifact_name: codex-x86_64-unknown-linux-gnu-patched
+            publish_path: .temp/codex-x86_64-unknown-linux-gnu.patched.tar.gz
+            archive_kind: tar.gz
+          - label: Windows x64
+            download_name: codex-x86_64-pc-windows-msvc.exe
+            working_binary_name: codex-x86_64-pc-windows-msvc.exe
+            patched_binary_name: codex-x86_64-pc-windows-msvc.patched.exe
+            artifact_name: codex-x86_64-pc-windows-msvc-patched
+            publish_path: .temp/codex-x86_64-pc-windows-msvc.patched.exe
+            archive_kind: raw
 
     steps:
       - name: Checkout patch repo
@@ -21,14 +72,25 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Download Windows x64 release binary
+      - name: Download release payload
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .temp
+          mkdir -p .temp/input .temp/work
           curl -fL --retry 3 \
-            -o .temp/codex-x86_64-pc-windows-msvc.exe \
-            "https://github.com/openai/codex/releases/download/${{ inputs.release_tag }}/codex-x86_64-pc-windows-msvc.exe"
+            -o ".temp/input/${{ matrix.download_name }}" \
+            "https://github.com/openai/codex/releases/download/${{ needs.prepare-release.outputs.upstream_release_tag }}/${{ matrix.download_name }}"
+
+      - name: Prepare input binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.archive_kind }}" == "tar.gz" ]]; then
+            tar -xzf ".temp/input/${{ matrix.download_name }}" -C .temp/work
+          else
+            cp ".temp/input/${{ matrix.download_name }}" ".temp/work/${{ matrix.working_binary_name }}"
+          fi
 
       - name: Download matching read_path.md template
         shell: bash
@@ -36,7 +98,7 @@ jobs:
           set -euo pipefail
           curl -fL --retry 3 \
             -o .temp/read_path.md \
-            "https://raw.githubusercontent.com/openai/codex/${{ inputs.release_tag }}/codex-rs/core/templates/memories/read_path.md"
+            "https://raw.githubusercontent.com/openai/codex/${{ needs.prepare-release.outputs.upstream_release_tag }}/codex-rs/core/templates/memories/read_path.md"
 
       - name: Patch read_path.md template
         shell: bash
@@ -51,19 +113,71 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/patch_read_path_block.py \
-            --exe .temp/codex-x86_64-pc-windows-msvc.exe \
+            --exe ".temp/work/${{ matrix.working_binary_name }}" \
             --template .temp/read_path.md \
-            --output-exe .temp/codex-x86_64-pc-windows-msvc.patched.exe \
+            --output-exe ".temp/work/${{ matrix.patched_binary_name }}" \
             --output-template .temp/read_path.block-patched.md
+
+      - name: Preserve executable mode for patched Linux binary
+        if: matrix.archive_kind == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod --reference ".temp/work/${{ matrix.working_binary_name }}" ".temp/work/${{ matrix.patched_binary_name }}"
 
       - name: Verify patched binary keeps original size
         shell: bash
         run: |
           set -euo pipefail
-          python -c "from pathlib import Path; original = Path('.temp/codex-x86_64-pc-windows-msvc.exe').stat().st_size; patched = Path('.temp/codex-x86_64-pc-windows-msvc.patched.exe').stat().st_size; print(f'original_size={original}'); print(f'patched_size={patched}'); raise SystemExit(0 if original == patched else 1)"
+          python -c "from pathlib import Path; original = Path('.temp/work/${{ matrix.working_binary_name }}').stat().st_size; patched = Path('.temp/work/${{ matrix.patched_binary_name }}').stat().st_size; print(f'original_size={original}'); print(f'patched_size={patched}'); raise SystemExit(0 if original == patched else 1)"
 
-      - name: Upload patched Windows x64 binary
+      - name: Package patched output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.archive_kind }}" == "tar.gz" ]]; then
+            tar -C .temp/work -czf "${{ matrix.publish_path }}" "${{ matrix.patched_binary_name }}"
+          else
+            cp ".temp/work/${{ matrix.patched_binary_name }}" "${{ matrix.publish_path }}"
+          fi
+
+      - name: Upload patched release artifact
         uses: actions/upload-artifact@v7
         with:
-          name: codex-x86_64-pc-windows-msvc-patched
-          path: .temp/codex-x86_64-pc-windows-msvc.patched.exe
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.publish_path }}
+
+  publish-prerelease:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare-release
+      - patch-release-binary
+
+    steps:
+      - name: Download patched release artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: .temp/dist
+          pattern: codex-*-patched
+          merge-multiple: true
+
+      - name: Publish patched pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.patched_release_tag }}
+          name: Patched Codex ${{ needs.prepare-release.outputs.upstream_release_name }}
+          prerelease: true
+          make_latest: false
+          target_commitish: ${{ github.sha }}
+          files: |
+            .temp/dist/codex-x86_64-pc-windows-msvc.patched.exe
+            .temp/dist/codex-x86_64-unknown-linux-gnu.patched.tar.gz
+          body: |
+            Patched binaries for upstream release `${{ needs.prepare-release.outputs.upstream_release_tag }}`.
+
+            Workflow input accepts either the upstream release name (`${{ needs.prepare-release.outputs.upstream_release_name }}` style) or the raw upstream tag (`${{ needs.prepare-release.outputs.upstream_release_tag }}` style).
+
+            This repository publishes patched artifacts as the distinct pre-release `${{ needs.prepare-release.outputs.patched_release_tag }}` so they do not collide with upstream assets.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

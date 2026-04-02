@@ -49,13 +49,28 @@ rust-v0.116.0
 
 这条 workflow 会：
 
-1. 下载指定 `release_tag` 对应的 `codex-x86_64-pc-windows-msvc.exe`
+1. 接受上游 release 名称（例如 `0.119.0-alpha.3`）或原始 upstream tag（例如 `rust-v0.119.0-alpha.3`），并统一解析成真实 upstream release tag
 2. 下载同 tag 的 `codex-rs/core/templates/memories/read_path.md`
-3. 先做一层提示词 patch：只改 4 处目标文本，并要求 patch 前后归一化后的模板字节长度完全一致
-4. 再做一层制成品 patch：用原始 `read_path.md` 定位 exe 内嵌 block，再用 patched 模板按原偏移覆盖
-5. 上传 patched Windows x64 可执行文件
+3. 下载 Windows x64 成品 `codex-x86_64-pc-windows-msvc.exe`
+4. 下载 Linux x64 成品包 `codex-x86_64-unknown-linux-gnu.tar.gz`，解出其中的 `codex-x86_64-unknown-linux-gnu`
+5. 先做一层提示词 patch：只改 4 处目标文本，并要求 patch 前后归一化后的模板字节长度完全一致
+6. 再做一层制成品 patch：用原始 `read_path.md` 定位内嵌 block，再用 patched 模板按原偏移覆盖，并校验 patch 前后的二进制字节长度完全一致
+7. 上传 patched Windows x64 可执行文件与 patched Linux x64 tarball
+8. 两个平台都成功后，自动发布 `patched-<release>` 命名的 GitHub pre-release
 
 这条路径的重点不是“硬编码一整份完整提示词”，而是尽量用最小锚点做等长替换。这样 upstream 只要没有大改 `read_path.md`，即使有少量无关文本变化，我们仍然大概率可以继续 patch；一旦关键锚点缺失或等长条件失效，workflow 会直接失败，而不是猜测性地继续改。
+
+当前默认输入已经对齐到新的 upstream pre-release 命名方式：
+
+```text
+0.119.0-alpha.3
+```
+
+如果你更想显式传原始 upstream tag，也可以直接填：
+
+```text
+rust-v0.119.0-alpha.3
+```
 
 ## 产物说明
 
