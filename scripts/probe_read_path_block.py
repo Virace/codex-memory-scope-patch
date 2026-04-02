@@ -32,12 +32,23 @@ class ReadPathBlockMatch:
         return f"0x{self.length:X}"
 
 
-def normalize_template_for_binary(template_text: str) -> bytes:
+def normalize_template_for_binary(
+    template_text: str, *, newline: str = "\r\n"
+) -> bytes:
     normalized = template_text.replace("\r\n", "\n").replace("\r", "\n")
-    normalized = normalized.replace("\n", "\r\n")
-    if normalized.endswith("\r\n"):
-        normalized = normalized[:-2]
+    normalized = normalized.replace("\n", newline)
+    if newline and normalized.endswith(newline):
+        normalized = normalized[: -len(newline)]
     return normalized.encode("utf-8")
+
+
+def _normalized_template_variants(template_text: str) -> list[bytes]:
+    variants: list[bytes] = []
+    for newline in ("\r\n", "\n"):
+        candidate = normalize_template_for_binary(template_text, newline=newline)
+        if candidate and candidate not in variants:
+            variants.append(candidate)
+    return variants
 
 
 def _find_unique_match(mm: mmap.mmap, needle: bytes) -> int:
@@ -56,14 +67,33 @@ def _find_unique_match(mm: mmap.mmap, needle: bytes) -> int:
 
 def locate_read_path_block(exe_path: Path, template_path: Path) -> ReadPathBlockMatch:
     template_text = template_path.read_text(encoding="utf-8")
-    needle = normalize_template_for_binary(template_text)
-    if not needle:
+    needles = _normalized_template_variants(template_text)
+    if not needles:
         raise ValueError(f"Normalized template is empty: {template_path}")
 
+    matches: list[tuple[int, bytes]] = []
     with exe_path.open("rb") as handle, mmap.mmap(
         handle.fileno(), 0, access=mmap.ACCESS_READ
     ) as mm:
-        start_offset = _find_unique_match(mm, needle)
+        for needle in needles:
+            try:
+                start_offset = _find_unique_match(mm, needle)
+            except ValueError as exc:
+                if str(exc) == "Expected exactly one embedded block match, found 0":
+                    continue
+                raise
+            matches.append((start_offset, needle))
+
+    if not matches:
+        raise ValueError("Expected exactly one embedded block match, found 0")
+    if len(matches) > 1:
+        offsets = ", ".join(f"0x{start_offset:X}" for start_offset, _ in matches)
+        raise ValueError(
+            "Expected exactly one embedded block match across supported newline variants, "
+            f"found multiple at {offsets}"
+        )
+
+    start_offset, needle = matches[0]
 
     return ReadPathBlockMatch(
         start_offset=start_offset,

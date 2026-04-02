@@ -27,6 +27,22 @@ def build_patched_template(template_text: str) -> str:
     return patch_read_path_template.build_patched_template(template_text)
 
 
+def _matched_newline_bytes(match: probe_read_path_block.ReadPathBlockMatch) -> str:
+    return "\r\n" if b"\r\n" in match.matched_bytes else "\n"
+
+
+def _pad_linux_lf_block_if_needed(
+    *, patched_block: bytes, expected_length: int, newline: str
+) -> bytes:
+    length_delta = expected_length - len(patched_block)
+    if newline == "\n" and length_delta == 2:
+        # Linux release binaries currently embed an LF-normalized template.
+        # The human-readable patch text is equal-length under CRLF, but LF loses
+        # two bytes because the injected scope header adds two line breaks.
+        return patched_block + b"  "
+    return patched_block
+
+
 def patch_executable_copy(
     *,
     exe_path: Path,
@@ -37,7 +53,15 @@ def patch_executable_copy(
     template_text = template_path.read_text(encoding="utf-8")
     patched_text = build_patched_template(template_text)
     original_match = probe_read_path_block.locate_read_path_block(exe_path, template_path)
-    patched_block = normalize_template_for_binary(patched_text)
+    newline = _matched_newline_bytes(original_match)
+    patched_block = probe_read_path_block.normalize_template_for_binary(
+        patched_text, newline=newline
+    )
+    patched_block = _pad_linux_lf_block_if_needed(
+        patched_block=patched_block,
+        expected_length=original_match.length,
+        newline=newline,
+    )
 
     if len(patched_block) != original_match.length:
         raise ValueError(

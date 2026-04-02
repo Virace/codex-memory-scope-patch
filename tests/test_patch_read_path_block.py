@@ -128,6 +128,40 @@ class PatchReadPathBlockTests(unittest.TestCase):
             template_patch_module.build_patched_template(TEMPLATE_TEXT),
         )
 
+    def test_patch_executable_copy_supports_linux_lf_embedded_block(self) -> None:
+        module = load_module()
+        template_patch_module = load_template_patch_module()
+        template_path = self.write_text("read_path.md", TEMPLATE_TEXT)
+        original_block = TEMPLATE_TEXT.replace("\r\n", "\n").replace("\r", "\n").encode(
+            "utf-8"
+        )
+        prefix = b"prefix-bytes:"
+        suffix = b":suffix-bytes"
+        exe_path = self.root / "codex-linux"
+        exe_path.write_bytes(prefix + original_block + suffix)
+        output_path = self.root / "codex-linux-patched"
+        candidate_path = self.root / "read_path.linux.patched.md"
+
+        result = module.patch_executable_copy(
+            exe_path=exe_path,
+            template_path=template_path,
+            output_path=output_path,
+            candidate_output_path=candidate_path,
+        )
+
+        patched_text = template_patch_module.build_patched_template(TEMPLATE_TEXT)
+        patched_block = patched_text.replace("\r\n", "\n").replace("\r", "\n").encode(
+            "utf-8"
+        )
+        padded_block = patched_block.rstrip(b"\n") + b"  \n"
+        output_bytes = output_path.read_bytes()
+
+        self.assertEqual(exe_path.stat().st_size, output_path.stat().st_size)
+        self.assertEqual(result.start_offset, len(prefix))
+        self.assertIn(padded_block, output_bytes)
+        self.assertNotIn(original_block, output_bytes)
+        self.assertEqual(candidate_path.read_text(encoding="utf-8"), patched_text)
+
     def test_patch_executable_copy_fails_when_template_patch_loses_equal_length(self) -> None:
         module = load_module()
         template_path = self.write_text(
