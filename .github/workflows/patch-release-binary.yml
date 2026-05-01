@@ -96,9 +96,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fL --retry 3 \
-            -o .temp/read_path.md \
-            "https://raw.githubusercontent.com/openai/codex/${{ needs.prepare-release.outputs.upstream_release_tag }}/codex-rs/core/templates/memories/read_path.md"
+          current_url="https://raw.githubusercontent.com/openai/codex/${{ needs.prepare-release.outputs.upstream_release_tag }}/codex-rs/memories/read/templates/memories/read_path.md"
+          legacy_url="https://raw.githubusercontent.com/openai/codex/${{ needs.prepare-release.outputs.upstream_release_tag }}/codex-rs/core/templates/memories/read_path.md"
+          curl -fL --retry 3 -o .temp/read_path.md "$current_url" \
+            || curl -fL --retry 3 -o .temp/read_path.md "$legacy_url"
 
       - name: Patch read_path.md template
         shell: bash

@@ -13,7 +13,21 @@ NEW_BLOCK = "\n".join(
         "This restriction does not apply to unrelated project directories or other MCP-managed state unless separately instructed.",
     ]
 )
-DEFAULT_TARGET = Path("upstream/codex-rs/core/templates/memories/read_path.md")
+UPSTREAM_ROOT = Path("upstream")
+READ_PATH_CANDIDATES = (
+    Path("codex-rs/memories/read/templates/memories/read_path.md"),
+    Path("codex-rs/core/templates/memories/read_path.md"),
+)
+
+
+def resolve_default_target(root: Path = UPSTREAM_ROOT) -> Path:
+    for relative_path in READ_PATH_CANDIDATES:
+        target = root / relative_path
+        if target.exists():
+            return target
+
+    expected = ", ".join(str(root / path) for path in READ_PATH_CANDIDATES)
+    raise FileNotFoundError(f"Could not find read_path.md in any known location: {expected}")
 
 
 def replace_read_path_scope(path: Path) -> None:
@@ -40,15 +54,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "path",
         nargs="?",
-        default=str(DEFAULT_TARGET),
-        help="Path to codex-rs/core/templates/memories/read_path.md",
+        default=None,
+        help=(
+            "Path to read_path.md. Defaults to the current upstream split-memory path "
+            "with a legacy core/templates fallback."
+        ),
     )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    target = Path(args.path)
+    target = Path(args.path) if args.path is not None else resolve_default_target()
     replace_read_path_scope(target)
     print(f"Updated {target}")
     return 0

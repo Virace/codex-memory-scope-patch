@@ -40,20 +40,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python "${GITHUB_WORKSPACE}/scripts/replace_read_path_scope.py" \
-            "upstream/codex-rs/core/templates/memories/read_path.md"
+          python "${GITHUB_WORKSPACE}/scripts/replace_read_path_scope.py"
 
       - name: Verify only the intended file changed
         shell: bash
         run: |
           set -euo pipefail
+          current_read_path="codex-rs/memories/read/templates/memories/read_path.md"
+          legacy_read_path="codex-rs/core/templates/memories/read_path.md"
           mapfile -t changed < <(git -C upstream diff --name-only)
           printf '%s\n' "${changed[@]}"
           if [[ "${#changed[@]}" -ne 1 ]]; then
             echo "Unexpected changed file count: ${#changed[@]}"
             exit 1
           fi
-          if [[ "${changed[0]}" != "codex-rs/core/templates/memories/read_path.md" ]]; then
+          if [[ "${changed[0]}" != "$current_read_path" && "${changed[0]}" != "$legacy_read_path" ]]; then
             echo "Unexpected changed file: ${changed[0]}"
             exit 1
           fi
@@ -62,7 +63,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sed -n '1,20p' upstream/codex-rs/core/templates/memories/read_path.md
+          current_read_path="upstream/codex-rs/memories/read/templates/memories/read_path.md"
+          legacy_read_path="upstream/codex-rs/core/templates/memories/read_path.md"
+          if [[ -f "$current_read_path" ]]; then
+            sed -n '1,20p' "$current_read_path"
+          else
+            sed -n '1,20p' "$legacy_read_path"
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.93.0

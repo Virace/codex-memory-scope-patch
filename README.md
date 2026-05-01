@@ -2,7 +2,7 @@
 
 针对 `openai/codex` 的最小替换仓库。
 
-目标是只修正 `codex-rs/core/templates/memories/read_path.md` 中 memory 提示词的作用域边界，保留官方“当前会话不要直接改 Codex 自管 memory”这一限制，但把限制收窄到 `{{ base_path }}` 对应的 Codex home memory root，不再误伤其他 MCP-managed state 或项目目录。
+目标是只修正 `read_path.md` 中 memory 提示词的作用域边界，保留官方“当前会话不要直接改 Codex 自管 memory”这一限制，但把限制收窄到 `{{ base_path }}` 对应的 Codex home memory root，不再误伤其他 MCP-managed state 或项目目录。当前上游路径为 `codex-rs/memories/read/templates/memories/read_path.md`，旧 tag 会回退到 `codex-rs/core/templates/memories/read_path.md`。
 
 ## 设计原则
 
@@ -50,7 +50,7 @@ rust-v0.116.0
 这条 workflow 会：
 
 1. 接受上游 release 名称（例如 `0.119.0-alpha.3`）或原始 upstream tag（例如 `rust-v0.119.0-alpha.3`），并统一解析成真实 upstream release tag
-2. 下载同 tag 的 `codex-rs/core/templates/memories/read_path.md`
+2. 下载同 tag 的 `codex-rs/memories/read/templates/memories/read_path.md`；如果目标 tag 仍使用旧结构，则回退到 `codex-rs/core/templates/memories/read_path.md`
 3. 下载 Windows x64 成品 `codex-x86_64-pc-windows-msvc.exe`
 4. 下载 Linux x64 成品包 `codex-x86_64-unknown-linux-gnu.tar.gz`，解出其中的 `codex-x86_64-unknown-linux-gnu`
 5. 先做一层提示词 patch：只改 4 处目标文本，并要求 patch 前后归一化后的模板字节长度完全一致

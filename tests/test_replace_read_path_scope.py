@@ -27,6 +27,33 @@ class ReplaceReadPathScopeTests(unittest.TestCase):
         path.write_text(content, encoding="utf-8")
         return path
 
+    def test_resolves_current_split_memory_path_before_legacy_path(self) -> None:
+        module = load_module()
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        current_path = (
+            root / "codex-rs" / "memories" / "read" / "templates" / "memories" / "read_path.md"
+        )
+        legacy_path = root / "codex-rs" / "core" / "templates" / "memories" / "read_path.md"
+        current_path.parent.mkdir(parents=True)
+        legacy_path.parent.mkdir(parents=True)
+        current_path.write_text("current\n", encoding="utf-8")
+        legacy_path.write_text("legacy\n", encoding="utf-8")
+
+        self.assertEqual(current_path, module.resolve_default_target(root))
+
+    def test_resolves_legacy_path_when_current_split_memory_path_is_missing(self) -> None:
+        module = load_module()
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        legacy_path = root / "codex-rs" / "core" / "templates" / "memories" / "read_path.md"
+        legacy_path.parent.mkdir(parents=True)
+        legacy_path.write_text("legacy\n", encoding="utf-8")
+
+        self.assertEqual(legacy_path, module.resolve_default_target(root))
+
     def test_replaces_exact_sentence_once(self) -> None:
         module = load_module()
         path = self.write_temp_file(
